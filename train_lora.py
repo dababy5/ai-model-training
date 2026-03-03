@@ -1,83 +1,74 @@
 import torch
-from datasets import load_dataset
 from transformers import AutoTokenizer, AutoModelForCausalLM, BitsAndBytesConfig
-from peft import LoraConfig
-from trl import SFTTrainer, SFTConfig
-
+from peft import PeftModel
 
 BASE_MODEL = "Qwen/Qwen2.5-7B-Instruct"
-DATA_PATH = "aaron_sft_chat_000_013.jsonl"
-OUTPUT_DIR = "aaron-lora-out"
-MAX_SEQ_LEN = 1024
+LORA_DIR = "aaron-lora-out"
+MAX_NEW_TOKENS = 220
 
+def load_model():
+    tokenizer = AutoTokenizer.from_pretrained(BASE_MODEL, use_fast=True)
 
-dataset = load_dataset("json", data_files=DATA_PATH, split="train")
-
-tokenizer = AutoTokenizer.from_pretrained(BASE_MODEL, use_fast=True)
-
-def format_chat(example):
-    text = tokenizer.apply_chat_template(
-        example["messages"],
-        tokenize=False,
-        add_generation_prompt=False,
-    )
-    return {"text": text}
-
-dataset = dataset.map(format_chat, remove_columns=dataset.column_names)
-
-
-model = AutoModelForCausalLM.from_pretrained(
-    BASE_MODEL,
-    quantization_config=BitsAndBytesConfig(
+    bnb_config = BitsAndBytesConfig(
         load_in_4bit=True,
         bnb_4bit_quant_type="nf4",
         bnb_4bit_use_double_quant=True,
         bnb_4bit_compute_dtype=torch.bfloat16 if torch.cuda.is_available() else torch.float32,
-    ),
-    device_map="auto",
-    dtype=torch.bfloat16 if torch.cuda.is_available() else torch.float32,
-)
+    )
 
+    base = AutoModelForCausalLM.from_pretrained(
+        BASE_MODEL,
+        quantization_config=bnb_config,
+        device_map="auto",
+        torch_dtype=torch.bfloat16 if torch.cuda.is_available() else torch.float32,
+    )
 
-lora_config = LoraConfig(
-    r=16,
-    lora_alpha=32,
-    lora_dropout=0.05,
-    bias="none",
-    task_type="CAUSAL_LM",
-    target_modules=["q_proj", "k_proj", "v_proj", "o_proj"],
-)
+    model = PeftModel.from_pretrained(base, LORA_DIR)
+    model.eval()
+    return tokenizer, model
 
+def generate(tokenizer, model, user_text: str):
+    # Use Qwen chat template (same style you trained on)
+    messages = [
+        {"role": "system", "content": "You are Aaron's personalized assistant. Reply in Aaron's style: concise, technical, slightly casual."},
+        {"role": "user", "content": user_text},
+    ]
 
-training_args = SFTConfig(
-    output_dir=OUTPUT_DIR,
-    per_device_train_batch_size=1,
-    gradient_accumulation_steps=8,
-    learning_rate=2e-4,
-    num_train_epochs=1,
-    logging_steps=10,
-    save_steps=200,
-    optim="paged_adamw_8bit",
-    max_length=MAX_SEQ_LEN,
-    bf16=torch.cuda.is_available(),
-    fp16=False,
-    gradient_checkpointing=True,
-)
+    prompt = tokenizer.apply_chat_template(
+        messages,
+        tokenize=False,
+        add_generation_prompt=True,  # IMPORTANT for inference
+    )
 
+    inputs = tokenizer(prompt, return_tensors="pt").to(model.device)
 
-trainer = SFTTrainer(
-    model=model,
-    train_dataset=dataset,
-    args=training_args,
-    peft_config=lora_config,
-    processing_class=tokenizer,   
-)
+    with torch.no_grad():
+        output_ids = model.generate(
+            **inputs,
+            max_new_tokens=MAX_NEW_TOKENS,
+            do_sample=True,
+            temperature=0.8,
+            top_p=0.9,
+            repetition_penalty=1.05,
+        )
 
+    text = tokenizer.decode(output_ids[0], skip_special_tokens=True)
+    return text
 
-trainer.train()
+def main():
+    tokenizer, model = load_model()
 
+    print("\nLoaded base + LoRA. Type a message (or 'exit').\n")
+    while True:
+        user_text = input("You: ").strip()
+        if user_text.lower() in {"exit", "quit"}:
+            break
 
-trainer.save_model(OUTPUT_DIR)
-tokenizer.save_pretrained(OUTPUT_DIR)
+        out = generate(tokenizer, model, user_text)
 
-print(f"Saved LoRA adapter to: {OUTPUT_DIR}")
+        # Optional: print only the last assistant part (simple heuristic)
+        # If you want the raw full text, just print(out)
+        print("\nModel:\n" + out + "\n")
+
+if __name__ == "__main__":
+    main()
