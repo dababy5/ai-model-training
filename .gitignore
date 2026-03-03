@@ -5,3 +5,23 @@ aaron_sft_chat_000_013.jsonl
 .venv/
 .git/
 __pycache__/
+
+# Python
+.venv/
+__pycache__/
+*.pyc
+
+# Models (VERY IMPORTANT)
+*.safetensors
+*.bin
+checkpoints/
+output/
+
+# Large datasets
+*.jsonl
+*.json
+data/
+datasets/
+
+# OS junk
+.DS_Store
