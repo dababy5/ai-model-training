@@ -1,0 +1,7 @@
+aaron_data_bundle_000_013_REPORT.json
+aaron_knowledge_corpus_000_013.jsonl
+aaron_private_hits_010_013.jsonl
+aaron_sft_chat_000_013.jsonl
+.venv/
+.git/
+__pycache__/
