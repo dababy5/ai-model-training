@@ -1,27 +1,23 @@
-aaron_data_bundle_000_013_REPORT.json
-aaron_knowledge_corpus_000_013.jsonl
-aaron_private_hits_010_013.jsonl
-aaron_sft_chat_000_013.jsonl
-.venv/
-.git/
-__pycache__/
-
 # Python
 .venv/
 __pycache__/
 *.pyc
+*.pyo
 
-# Models (VERY IMPORTANT)
+# LoRA adapter & checkpoints (large binaries, keep off git)
+aaron-lora-out/
 *.safetensors
 *.bin
 checkpoints/
 output/
 
-# Large datasets
+# Training data (private)
 *.jsonl
 *.json
-data/
-datasets/
 
-# OS junk
+# Modal credentials
+.modal.toml
+
+# OS
 .DS_Store
+Thumbs.db
